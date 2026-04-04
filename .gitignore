@@ -1,0 +1,14 @@
+# Python virtual environment
+venv_prepos_mec/
+.venv/
+venv/
+
+# Environment variables (secrets)
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Python cache
+__pycache__/
+*.pyc
