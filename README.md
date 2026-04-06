@@ -167,6 +167,31 @@ El instrumento se fundamenta en dos modelos de adopción tecnológica:
 | **Intención de uso futuro** | 2 | Indaga si usaría la app en futuras iniciativas o la recomendaría |
 | **Motivación y apropiación** | 3 | Captura motivación para aplicar ciencias del comportamiento y difusión de conocimiento |
 
+#### Mapeo de preguntas por constructo
+
+Las preguntas se mapean en el análisis de la siguiente manera:
+
+1. **PEOU (Facilidad de uso percibida)**
+   - Sé cómo navegar la herramienta.
+   - Entiendo el propósito de cada sección de la app ("¿Qué son las Ciencias del Comportamiento?", "Diseña tu Intervención Comportamental", "Registra el impacto de tu intervención").
+   - Los términos usados en la Power App que son nuevos para mí los entiendo con facilidad.
+
+2. **PU (Utilidad percibida)**
+   - Las herramientas prácticas que te permiten diligenciar campos e interactuar con la app en la sección de "Diseña tu Intervención Comportamental" facilitan diseñar intervenciones.
+   - Siento que la app puede ser mi herramienta principal para realizar una intervención comportamental.
+   - Considero que la herramienta mejora/facilita la aplicación de Ciencias del Comportamiento.
+
+3. **Intención de uso futuro**
+   - La usaría en futuras iniciativas.
+   - Considero que esta App puede ser útil incluso para colaboradores que no han tenido espacios con B-Lab.
+
+4. **Motivación y apropiación del conocimiento**
+   - Puedo asociar el contenido teórico de la Power App con los retos que tengo en mi rol.
+   - Usar esta herramienta me motiva a aplicar Ciencias del Comportamiento en mis proyectos.
+   - Comparto con otras personas conocimientos encontrados en la herramienta.
+
+Nota: en el archivo de datos original, algunos encabezados pueden incluir sufijos como ".Selecciona" o variaciones de espacios/puntuación; el mapeo del notebook contempla esos nombres exactos de columnas.
+
 **Métricas por constructo:**
 - Promedio agregado de items
 - Favorabilidad y neto agregados
