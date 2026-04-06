@@ -490,6 +490,62 @@ def render_app_usage_analysis(usability_events_df: pd.DataFrame, sessions_df: pd
         st.plotly_chart(fig_franja, use_container_width=True)
 
 
+def build_constructos_analysis(ranking_df: pd.DataFrame) -> pd.DataFrame:
+    """Analiza preguntas agrupadas por constructos TAM/UTAUT."""
+    CONSTRUCTOS = {
+        "PEOU (Facilidad de uso percibida)": [
+            "Sé cómo navegar la herramienta.Selecciona",
+            'Entiendo el propósito de cada sección de la app ("¿Qué son las Ciencias del Comportamiento?", "Diseña tu Intervención Comportamental", "Registra el impacto de tu intervención").Selecciona',
+            "Los términos usados en la Power App que son nuevos para mí los entiendo con facilidad.Selecciona",
+        ],
+        "PU (Utilidad percibida)": [
+            'Las herramientas prácticas que te permiten diligenciar campos e interactuar con la app en la sección de "Diseña tu Intervención Comportamental" facilitan diseñar intervenciones..Selecciona',
+            "Siento que la app puede ser mi herramienta principal para realizar una intervención comportamental  .Selecciona",
+            "Considero que la herramienta mejora/facilita la aplicación de Ciencias del Comportamiento.Selecciona",
+        ],
+        "Intención de uso futuro": [
+            "La usaría en futuras iniciativas. .Selecciona",
+            "Considero que esta App puede ser útil incluso para colaboradores que no han tenido espacios con B-Lab..Selecciona",
+        ],
+        "Motivación y apropiación": [
+            "Puedo asociar el contenido teórico de la Power App con los retos que tengo en mi rol   .Selecciona",
+            "Usar esta herramienta me motiva a aplicar Ciencias del Comportamiento en mis proyectos..Selecciona",
+            "Comparto con otras personas conocimientos encontrados en la herramienta .Selecciona",
+        ],
+    }
+
+    results = []
+    for constructo_name, expected_questions in CONSTRUCTOS.items():
+        matching_questions = [q for q in expected_questions if q in ranking_df["pregunta"].values]
+        
+        if not matching_questions:
+            continue
+        
+        subset = ranking_df[ranking_df["pregunta"].isin(matching_questions)]
+        
+        if subset.empty:
+            continue
+        
+        n_items = len(matching_questions)
+        promedio = float(subset["promedio"].mean())
+        favorabilidad = float(subset["favorabilidad_pct"].mean())
+        top_box = float(subset["top_box_pct"].mean())
+        desfavorabilidad = float(subset["desfavorabilidad_pct"].mean())
+        neto = favorabilidad - desfavorabilidad
+        
+        results.append({
+            "constructo": constructo_name,
+            "n_items": n_items,
+            "promedio": round(promedio, 3),
+            "favorabilidad_pct": round(favorabilidad, 1),
+            "top_box_pct": round(top_box, 1),
+            "desfavorabilidad_pct": round(desfavorabilidad, 1),
+            "neto_favorabilidad_pct": round(neto, 1),
+        })
+    
+    return pd.DataFrame(results).sort_values("promedio", ascending=True).reset_index(drop=True)
+
+
 def main() -> None:
     st.title("Tablero de Analisis - Encuesta Likert Power App")
     st.caption("Visualizacion consolidada de satisfaccion y preguntas abiertas")
@@ -545,6 +601,68 @@ def main() -> None:
         col_b.write(
             f"Promedio: {best_row['promedio']:.2f} | Top-box: {best_row['top_box_pct']:.1f}% | Neto: {best_row['neto_favorabilidad_pct']:.1f}%"
         )
+
+    with st.expander("Análisis por Constructos TAM/UTAUT", expanded=True):
+        st.markdown("""
+        El instrumento se fundamenta en el Modelo de Aceptación Tecnológica (TAM) y la Teoría Unificada 
+        de Aceptación y Uso de la Tecnología (UTAUT). Las preguntas miden cuatro constructos clave:
+        
+        - **PEOU (Facilidad de uso percibida)**: navegación, claridad y comprensión
+        - **PU (Utilidad percibida)**: facilidad de diseño y mejora en aplicación
+        - **Intención de uso futuro**: recomendación y uso en iniciativas posteriores
+        - **Motivación y apropiación**: asociación teórica, motivación y difusión del conocimiento
+        """)
+        
+        constructos_df = build_constructos_analysis(ranking_df)
+        if not constructos_df.empty:
+            col_const1, col_const2 = st.columns(2)
+            
+            # Autoescalar rangos de colores según los datos
+            prom_min = float(constructos_df["promedio"].min())
+            prom_max = float(constructos_df["promedio"].max())
+            neto_min = float(constructos_df["neto_favorabilidad_pct"].min())
+            neto_max = float(constructos_df["neto_favorabilidad_pct"].max())
+            
+            with col_const1:
+                st.subheader("Promedio por Constructo")
+                fig_const_prom = px.bar(
+                    constructos_df.sort_values("promedio"),
+                    y="constructo",
+                    x="promedio",
+                    orientation="h",
+                    color="promedio",
+                    color_continuous_scale="RdYlGn",
+                    range_color=(prom_min, prom_max),
+                    title="Promedio (1-5)",
+                    hover_data={"promedio": ":.3f"},
+                )
+                fig_const_prom.update_layout(height=350, showlegend=False)
+                st.plotly_chart(fig_const_prom, use_container_width=True)
+            
+            with col_const2:
+                st.subheader("Neto de Favorabilidad")
+                fig_const_neto = px.bar(
+                    constructos_df.sort_values("neto_favorabilidad_pct"),
+                    y="constructo",
+                    x="neto_favorabilidad_pct",
+                    orientation="h",
+                    color="neto_favorabilidad_pct",
+                    color_continuous_scale="RdYlGn",
+                    range_color=(neto_min, neto_max),
+                    title="Neto Favorabilidad (%)",
+                    hover_data={"neto_favorabilidad_pct": ":.1f"},
+                )
+                fig_const_neto.update_layout(height=350, showlegend=False)
+                st.plotly_chart(fig_const_neto, use_container_width=True)
+            
+            st.dataframe(
+                constructos_df[[
+                    "constructo", "n_items", "promedio", "favorabilidad_pct", 
+                    "top_box_pct", "neto_favorabilidad_pct"
+                ]],
+                use_container_width=True,
+                hide_index=True,
+            )
 
     chart_df = ranking_df.copy()
     question_label_map = build_question_label_map(chart_df)
