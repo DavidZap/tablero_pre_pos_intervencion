@@ -189,11 +189,6 @@ def compute_prepost_change(pre_df: pd.DataFrame, post_df: pd.DataFrame) -> tuple
     pre_cols = [f"{q}_pre" for q in questions]
     post_cols = [f"{q}_post" for q in questions]
 
-    pre_vals = paired[pre_cols].to_numpy(dtype=float).ravel()
-    post_vals = paired[post_cols].to_numpy(dtype=float).ravel()
-    pre_vals = pre_vals[~np.isnan(pre_vals)]
-    post_vals = post_vals[~np.isnan(post_vals)]
-
     person_pre = paired[pre_cols].mean(axis=1, skipna=True)
     person_post = paired[post_cols].mean(axis=1, skipna=True)
     person_valid = person_pre.notna() & person_post.notna()
@@ -240,8 +235,8 @@ def compute_prepost_change(pre_df: pd.DataFrame, post_df: pd.DataFrame) -> tuple
 
     summary = base_summary.copy()
     summary["n_pares"] = float(paired.shape[0])
-    summary["indice_pre"] = float(np.mean(pre_vals)) if pre_vals.size else float("nan")
-    summary["indice_post"] = float(np.mean(post_vals)) if post_vals.size else float("nan")
+    summary["indice_pre"] = float(person_pre[person_valid].mean()) if person_valid.any() else float("nan")
+    summary["indice_post"] = float(person_post[person_valid].mean()) if person_valid.any() else float("nan")
     if pd.notna(summary["indice_pre"]) and pd.notna(summary["indice_post"]):
         summary["delta_global"] = float(summary["indice_post"] - summary["indice_pre"])
     summary["pct_personas_mejoran"] = (
