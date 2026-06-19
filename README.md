@@ -1,390 +1,232 @@
-# Tablero de Análisis Pre-Post: Encuesta Likert Power App
+# Tablero de Analisis Pre-Post: Encuesta Likert Power App
 
-## 📋 Descripción General
+Resumen ejecutivo para stakeholders: ver RESUMEN_EJECUTIVO.md.
 
-Este proyecto implementa un **análisis consolidado de encuestas tipo Likert (1-5)** para medir la adopción y satisfacción de la Power App de Ciencias del Comportamiento. Combina análisis estadísticos robustos con visualizaciones interactivas para evaluar el impacto de una intervención educativa.
+## Descripcion general
 
-El proyecto incluye:
-- **Análisis descriptivo** de respuestas Likert con métricas de favorabilidad y neto
-- **Análisis por constructos TAM/UTAUT** para entender predictores de adopción tecnológica
-- **Cálculo de potencia estadística** para estudios pre-post
-- **Dashboard interactivo** con Streamlit para exploración de datos
+Proyecto para analizar encuestas Likert (1-5) sobre adopcion y experiencia de uso de una Power App de Ciencias del Comportamiento.
 
----
+Incluye tres componentes principales:
 
-## 🎯 Objetivos
+1. Pipeline de analisis (notebooks + scripts) para generar CSV de resultados.
+2. Comparativo pretest vs postest con emparejamiento por persona y prueba de Wilcoxon.
+3. Dashboard en Streamlit para explorar resultados de encuesta, preguntas abiertas y analitica de uso de la app.
 
-1. **Medir la experiencia de usuarios** con la Power App mediante escalas Likert
-2. **Identificar constructos clave** de adopción tecnológica (TAM/UTAUT):
-   - Facilidad de uso percibida (PEOU)
-   - Utilidad percibida (PU)
-   - Intención de uso futuro
-   - Motivación y apropiación del conocimiento
-3. **Evaluar mejoras pre-post intervención** con rigor estadístico
-4. **Generar recomendaciones** basadas en análisis de preguntas abiertas
+## Objetivos
 
----
+1. Medir satisfaccion y percepciones de uso con escala Likert.
+2. Detectar cambios pre-post de la intervencion con criterios estadisticos.
+3. Priorizar oportunidades de mejora a nivel de pregunta y seccion.
+4. Exponer resultados en un tablero ejecutable para equipos no tecnicos.
 
-## 📁 Estructura del Proyecto
+## Estructura actual
 
-```
+```text
 tablero_pre_pos_intervencion/
-├── README.md                          # Este archivo
-├── requirements.txt                   # Dependencias Python
-├── streamlit_app.py                   # Dashboard interactivo
-├── notebooks/
-│   └── 01_analisis_likert_powerapp.ipynb    # Notebook principal con análisis completo
-├── data/
-│   ├── raw/
-│   │   └── Experiencia_en_el_uso_de_Power_App_B-Lab.xlsx    # Datos brutos
-│   └── processed/                     # Datos procesados (generado automáticamente)
-├── outputs/
-│   ├── ranking_preguntas.csv          # Ranking de preguntas por promedio
-│   ├── resumen_metricas.csv           # Resumen de métricas Likert
-│   ├── constructos_tam_utaut.csv      # Análisis por constructos
-│   ├── preguntas_abiertas_resumen.csv # Resumen de respuestas abiertas
-│   └── preguntas_abiertas_terminos.csv # Términos frecuentes en abiertas
-└── env_pre_pos/                       # Entorno virtual (no subir a git)
+|-- README.md
+|-- requirements.txt
+|-- streamlit_app.py
+|-- analisis_actualizado.py
+|-- comparar_pruebas.py
+|-- notebooks/
+|   |-- 01_analisis_likert_powerapp.ipynb
+|   |-- 02_analisis_prepost_completo.ipynb
+|-- data/
+|   |-- raw/
+|   `-- processed/
+`-- outputs/
+    |-- ranking_preguntas.csv
+    |-- resumen_metricas.csv
+    |-- constructos_tam_utaut.csv
+    |-- preguntas_abiertas_resumen.csv
+    |-- preguntas_abiertas_terminos.csv
+    |-- comparativo_prepost.csv
+    |-- recordatorios_usabilidad.csv
+    `-- recordatorios_ultima_accion.csv
 ```
 
----
+## Requisitos
 
-## 📦 Requisitos
+- Python 3.10+
+- Dependencias en requirements.txt
 
-- **Python 3.8+**
-- Dependencias (ver `requirements.txt`):
-  - `pandas` - Manipulación de datos
-  - `numpy` - Operaciones numéricas
-  - `matplotlib` - Visualización estática
-  - `seaborn` - Gráficos estadísticos
-  - `plotly` - Gráficos interactivos
-  - `streamlit` - Dashboard web
-  - `scipy` - Análisis estadístico (pruebas pareadas, Wilcoxon)
+Principales librerias:
 
----
+- pandas
+- numpy
+- scipy
+- plotly
+- streamlit
+- openpyxl
+- python-dotenv
+- office365-rest-python-client
 
-## 🚀 Instalación y Configuración
+## Instalacion rapida
 
-### 1. Clonar/descargar el repositorio
-```bash
-git clone <url-repo>
-cd tablero_pre_pos_intervencion
-```
+En Windows (PowerShell):
 
-### 2. Crear ambiente virtual
-```bash
-python -m virtualenv env_pre_pos
-```
-
-### 3. Activar ambiente
-
-**En PowerShell (Windows):**
 ```powershell
+python -m venv env_pre_pos
 .\env_pre_pos\Scripts\Activate.ps1
-```
-
-**En CMD (Windows):**
-```cmd
-env_pre_pos\Scripts\activate.bat
-```
-
-**En Linux/Mac:**
-```bash
-source env_pre_pos/bin/activate
-```
-
-### 4. Instalar dependencias
-```bash
 pip install -r requirements.txt
 ```
 
-### 5. Preparar datos
-- Copiar el archivo Excel bruto en: `data/raw/Experiencia_en_el_uso_de_Power_App_B-Lab.xlsx`
-- El notebook lo cargará automáticamente en modo local
+En Windows (CMD):
 
----
+```cmd
+python -m venv env_pre_pos
+env_pre_pos\Scripts\activate.bat
+pip install -r requirements.txt
+```
 
-## 📊 Uso
+## Datos esperados
 
-### Opción 1: Análisis Completo en Jupyter Notebook
+Ubicacion: data/raw/
+
+Archivos clave:
+
+- Experiencia_en_el_uso_de_Power_App_B-Lab.xlsx (pretest)
+- Experiencia_en_el_uso_de_Power_App_B-Lab - postest.xlsx (postest)
+- Usabilidad Power APP.xlsx (eventos de uso, opcional para modulo de analitica)
+
+Notas:
+
+- El comparativo pre-post empareja por Correo electronico.
+- Si falta correo, el dashboard intenta fallback por Nombre.
+- Los textos Likert se normalizan (minusculas, sin acentos, espacios limpios) antes del mapeo a 1-5.
+
+## Flujo recomendado
+
+1. Cargar/actualizar archivos fuente en data/raw.
+2. Ejecutar notebook(s) de analisis para regenerar CSV en outputs.
+3. Levantar dashboard y validar visualmente.
+4. Exportar comparativos desde el dashboard cuando aplique.
+
+## Ejecucion
+
+### 1) Notebooks
 
 ```bash
 jupyter notebook notebooks/01_analisis_likert_powerapp.ipynb
 ```
 
-El notebook ejecuta secuencialmente:
-1. **Carga de datos** (local o SharePoint)
-2. **Normalizacion y mapeo** a escala Likert
-3. **Cálculo de métricas** globales y por pregunta
-4. **Análisis por constructos** TAM/UTAUT
-5. **Análisis de preguntas abiertas** (frecuencia de términos)
-6. **Análisis pre-pos** (potencia estadística, pruebas pareadas)
-7. **Exports** a CSV para el dashboard
+Opcional para analisis pre-post extendido:
 
-### Opción 2: Dashboard Interactivo con Streamlit
+```bash
+jupyter notebook notebooks/02_analisis_prepost_completo.ipynb
+```
+
+### 2) Scripts auxiliares
+
+Comparativo pre-post rapido (con pares por persona):
+
+```bash
+python analisis_actualizado.py
+```
+
+Comparacion Wilcoxon vs t pareada con vectores de ejemplo:
+
+```bash
+python comparar_pruebas.py
+```
+
+### 3) Dashboard Streamlit
 
 ```bash
 streamlit run streamlit_app.py
 ```
 
-Abre automáticamente http://localhost:8501 con:
-- **Métricas globales** (índice de satisfacción, favorabilidad, n respuestas)
-- **Mejor y peor pregunta** con desglose de métricas
-- **Ranking interactivo** de preguntas (elegir métrica a visualizar)
-- **Distribución Likert** en barras apiladas porcentuales
-- **Análisis por constructos TAM/UTAUT** con gráficos autoescalados
-- **Análisis de preguntas abiertas** con términos frecuentes
+URL local por defecto: http://localhost:8501
 
----
+## Que muestra el dashboard
 
-## 📈 Análisis Incluidos
+### Encuesta Likert
 
-### 1. **Análisis Descriptivo Likert**
+- Indice global, favorabilidad global, total de respuestas y numero de preguntas.
+- Ranking de preguntas por metrica (promedio, favorabilidad, top-box, desfavorabilidad, neto).
+- Distribucion Likert en barras apiladas porcentuales.
+- Mejor y peor pregunta.
+- Detalle por persona (comparado contra promedio global).
 
-**Métricas por pregunta:**
-- `n_validas`: Respuestas válidas (no nulos)
-- `promedio`: Media en escala 1-5
-- `desviacion`: Desviación estándar
-- `favorabilidad_pct`: % de respuestas 4-5
-- `top_box_pct`: % de respuestas 5 (totalmente de acuerdo)
-- `desfavorabilidad_pct`: % de respuestas 1-2
-- `neto_favorabilidad_pct`: Favorabilidad - Desfavorabilidad
+### Pretest vs postest
 
-**Ranking:** Ordena preguntas de peor a mejor según promedio, neto y top-box.
+- Numero de personas en pre, post y pares emparejados.
+- Indice global pre y post, delta global y porcentaje de personas que mejoran.
+- Cambios por pregunta con:
+  - delta promedio
+  - porcentaje mejora/sin cambio/empeora
+  - p-valor Wilcoxon
+  - tamano de efecto dz y categoria
+- Exportacion automatica y descarga manual de comparativo_prepost.csv.
 
----
+### Preguntas abiertas
 
-### 2. **Análisis por Constructos TAM/UTAUT**
+- Resumen por pregunta abierta.
+- Top de terminos frecuentes.
+- Tabla de respuestas completas con filtro por texto y por persona.
 
-El instrumento se fundamenta en dos modelos de adopción tecnológica:
+### Analitica de uso de la app (si existe Usabilidad Power APP.xlsx)
 
-#### Constructos medidos:
+- Usuarios unicos, sesiones, duracion promedio y eventos.
+- Tendencia historica de inicios.
+- Abandono/completitud por seccion (texto y section_id estable).
+- Caminos de navegacion mas frecuentes.
+- Franjas horarias de mayor actividad.
 
-| Constructo | Preguntas | Definición |
-|---|---|---|
-| **PEOU (Facilidad de uso percibida)** | 3 | Evalúa navegación, claridad de secciones y comprensión de términos |
-| **PU (Utilidad percibida)** | 2-3 | Mide si la app facilita el diseño de intervenciones y mejora aplicación de conocimiento |
-| **Intención de uso futuro** | 2 | Indaga si usaría la app en futuras iniciativas o la recomendaría |
-| **Motivación y apropiación** | 3 | Captura motivación para aplicar ciencias del comportamiento y difusión de conocimiento |
+## Archivos de salida principales
 
-#### Mapeo de preguntas por constructo
+Generados en outputs/:
 
-Las preguntas se mapean en el análisis de la siguiente manera:
+- ranking_preguntas.csv
+- resumen_metricas.csv
+- constructos_tam_utaut.csv
+- preguntas_abiertas_resumen.csv
+- preguntas_abiertas_terminos.csv
+- comparativo_prepost.csv
 
-1. **PEOU (Facilidad de uso percibida)**
-   - Sé cómo navegar la herramienta.
-   - Entiendo el propósito de cada sección de la app ("¿Qué son las Ciencias del Comportamiento?", "Diseña tu Intervención Comportamental", "Registra el impacto de tu intervención").
-   - Los términos usados en la Power App que son nuevos para mí los entiendo con facilidad.
+Si hay analitica de uso:
 
-2. **PU (Utilidad percibida)**
-   - Las herramientas prácticas que te permiten diligenciar campos e interactuar con la app en la sección de "Diseña tu Intervención Comportamental" facilitan diseñar intervenciones.
-   - Siento que la app puede ser mi herramienta principal para realizar una intervención comportamental.
-   - Considero que la herramienta mejora/facilita la aplicación de Ciencias del Comportamiento.
+- recordatorios_usabilidad.csv
+- recordatorios_ultima_accion.csv
 
-3. **Intención de uso futuro**
-   - La usaría en futuras iniciativas.
-   - Considero que esta App puede ser útil incluso para colaboradores que no han tenido espacios con B-Lab.
+## Criterio de significancia (dashboard)
 
-4. **Motivación y apropiación del conocimiento**
-   - Puedo asociar el contenido teórico de la Power App con los retos que tengo en mi rol.
-   - Usar esta herramienta me motiva a aplicar Ciencias del Comportamiento en mis proyectos.
-   - Comparto con otras personas conocimientos encontrados en la herramienta.
+Para conclusion de intervencion significativa (indice global pre-post):
 
-Nota: en el archivo de datos original, algunos encabezados pueden incluir sufijos como ".Selecciona" o variaciones de espacios/puntuación; el mapeo del notebook contempla esos nombres exactos de columnas.
+1. Delta global > 0
+2. p-valor de Wilcoxon < 0.05
 
-**Métricas por constructo:**
-- Promedio agregado de items
-- Favorabilidad y neto agregados
-- Alfa de Cronbach (consistencia interna, idealmente > 0.7)
+Si scipy/Wilcoxon no esta disponible, el dashboard aplica una regla fallback por magnitud del cambio.
 
-**Interpretación:**
-- TAM predice que PEOU y PU predicen intención de uso
-- Intención de uso predice comportamiento real de adopción
-- Motivación moderará la relación entre utilidad y adopción
+## Troubleshooting
 
----
+### El dashboard muestra error de archivos faltantes
 
-### 3. **Análisis Pre-Pos (Significancia y Potencia)**
+Ejecuta el notebook de pipeline y confirma que existan en outputs, al menos:
 
-**Para estudios con medición pre-intervención y post-intervención:**
+- ranking_preguntas.csv
+- resumen_metricas.csv
+- preguntas_abiertas_resumen.csv
+- preguntas_abiertas_terminos.csv
 
-```python
-PRE_INDICE_GLOBAL = 3.906  # Promedio pre en escala 1-5
-N_PRE = 27                  # N pre-intervención
-ALPHA = 0.07                # Nivel de significancia
-POWER_TARGET = 0.80         # Potencia deseada
-```
+### No aparece comparativo pre-post
 
-**Calcula:**
-1. **Delta mínima para significancia**: Cambio requerido en promedio para p < alpha
-2. **Delta mínima para potencia**: Cambio requerido para 80% de probabilidad detectarlo
-3. **Media pos mínima esperada**: PRE_INDICE + delta
-4. **Tamaño de efecto (dz)**: Comparación estandarizada pre-pos
+Verifica:
 
-**Ejemplo:** Si SD_delta = 0.8 y n = 27, necesitas delta mínima de ~0.39 para p < 0.07
+- Que existan ambos archivos (pretest y postest) en data/raw.
+- Que compartan columnas Likert comparables.
+- Que exista una clave comun por persona (correo o nombre).
 
----
+### ImportError de librerias
 
-### 4. **Análisis de Preguntas Abiertas**
-
-**Procesamiento:**
-- Limpieza: minúsculas, sin acentos, espacios limpios
-- Tokenización: palabras de 3+ caracteres
-- Stopwords: Filtra palabras comunes (que, para, app, etc.)
-- Frecuencia: Top 12 términos más frecuentes por pregunta
-
-**Outputs:**
-- `preguntas_abiertas_resumen.csv`: Nº de respuestas y longitud promedio
-- `preguntas_abiertas_terminos.csv`: Términos con frecuencias para cada pregunta abierta
-
----
-
-## 📁 Archivos de Salida (CSV)
-
-Generados en `outputs/`:
-
-1. **ranking_preguntas.csv**
-   - Todas las preguntas Likert ordenadas peor → mejor
-   - Todas las métricas calculadas
-
-2. **resumen_metricas.csv**
-   - Frecuencias absoluta por categoría Likert (1-5) para cada pregunta
-
-3. **constructos_tam_utaut.csv**
-   - Métricas agregadas por los 4 constructos
-   - Alfa de Cronbach por constructo
-
-4. **preguntas_abiertas_resumen.csv**
-   - Nº de respuestas no vacías por pregunta abierta
-   - Longitud promedio del texto
-
-5. **preguntas_abiertas_terminos.csv**
-   - Términos más frecuentes y sus conteos
-   - Asociados a cada pregunta abierta
-
----
-
-## 🔧 Configuración Personalizada
-
-### Cambiar mapeo de constructos
-En el notebook, celda "Mapeo de preguntas a constructos":
-```python
-CONSTRUCTOS = {
-    "Mi_Constructo": [
-        "Pregunta 1 exacta del dataset",
-        "Pregunta 2 exacta del dataset",
-    ]
-}
-```
-
-### Cambiar parámetros pre-pos
-En celda "Análisis Pre-Pos":
-```python
-PRE_INDICE_GLOBAL = 3.5      # Tu promedio pre actual
-N_PRE = 30                    # Tu N pre
-ALPHA = 0.05                  # Tu alpha (ej: 0.05 o 0.07)
-POWER_TARGET = 0.80           # Potencia deseada (típicamente 0.80)
-```
-
-### Cambiar preguntas abiertas
-En `CONFIG`:
-```python
-"open_text_columns": [
-    "Tu pregunta abierta 1",
-    "Tu pregunta abierta 2",
-]
-```
-
----
-
-## 📝 Interpretación de Resultados
-
-### Neto de Favorabilidad vs Promedio
-
-| Métrica | Qué mide | Cuándo usar |
-|---|---|---|
-| **Promedio** | Tendencia central en escala 1-5 | Comparar niveles absolutos |
-| **Neto** | Brecha entre favorables (4-5) y desfavorables (1-2) | Detectar polarización, decisiones |
-
-**Ejemplo:**
-- Constructo A: promedio 3.9, neto 65% → gente acuerda pero algunos neutrales
-- Constructo B: promedio 3.9, neto 45% → gente más dispersa en opiniones
-
----
-
-## 🧪 Validaciones Incluidas
-
-El notebook ejecuta automáticamente:
-
-1. ✅ Al menos 1 pregunta Likert detectada
-2. ✅ Todos los valores mapeados entre 1-5 (o NaN)
-3. ✅ Frecuencias totales coinciden con respuestas válidas
-4. ✅ Pruebas unitarias de funciones críticas (normalización, mapeo, alfa)
-
----
-
-## 🐛 Troubleshooting
-
-### Error: "No se encontró archivo fallback"
-**Solución:** Copia el Excel bruto en `data/raw/Experiencia_en_el_uso_de_Power_App_B-Lab.xlsx`
-
-### Error: "No se detectaron columnas Likert"
-**Solución:** Revisa `CONFIG["metadata_columns"]` y `CONFIG["open_text_columns"]` — asegúrate de que las preguntas Likert no estén listadas ahí.
-
-### Gráficos de constructos con rangos extraños
-**Solución:** Normal — la escala se autoajusta al min/max de tus datos reales (no a rangos fijos).
-
-### ImportError: No module named 'plotly'
-**Solución:**
 ```bash
-pip install plotly
+pip install -r requirements.txt
 ```
 
----
+## Licencia
 
-## 📚 Referencias
+Uso interno B-Lab.
 
-- **TAM (Technology Acceptance Model):** Davis, F. D. (1989). "Perceived usefulness, perceived ease of use, and user acceptance of information technology."
-- **UTAUT (Unified Theory of Acceptance and Use of Technology):** Venkatesh, V., et al. (2003). "User Acceptance of Information Technology: Toward a Unified View."
-- **Alfa de Cronbach:** Medida de consistencia interna multiítem (valores > 0.7 indican buena consistencia)
-- **Prueba t pareada:** Compara medias pre-post para n pares pequeños (típicamente n ≤ 30)
-- **Potencia estadística:** Probabilidad de detectar un efecto si realmente existe
+## Ultima actualizacion
 
----
-
-## 👤 Autor
-
-**Desarrollado para:** Maestría en Estudios del Comportamiento - B-Lab  
-**Propósito:** Medición y evaluación de adopción de Power App educativa  
-**Fecha:** Abril 2026
-
----
-
-## 📄 Licencia
-
-Este proyecto está disponible para uso interno dentro de B-Lab.
-
----
-
-## 📞 Contacto / Soporte
-
-Para preguntas sobre:
-- **Análisis estadístico:** Revisar docstrings en funciones del notebook
-- **Configuración:** Ver secciones "Configuración Personalizada" arriba
-- **Bugs:** Verificar sección "Troubleshooting"
-
----
-
-## ✅ Checklist Pre-Producción
-
-- [ ] Archivo Excel copiado en `data/raw/`
-- [ ] `requirements.txt` actualizado con versiones
-- [ ] Notebook ejecutado exitosamente (todas las celdas)
-- [ ] Archivos CSV generados en `outputs/`
-- [ ] Dashboard Streamlit carga sin errores
-- [ ] Parámetros pre-pos ajustados a tu estudio (si aplica)
-- [ ] README revisado y actualizado
-
----
-
-**Última actualización:** 04 de abril de 2026
+18 de junio de 2026
