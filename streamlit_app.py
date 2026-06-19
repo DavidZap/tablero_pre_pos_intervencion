@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 import re
 import unicodedata
@@ -6,6 +8,11 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+
+try:
+    from scipy.stats import wilcoxon
+except Exception:
+    wilcoxon = None
 
 st.set_page_config(
     page_title="Tablero Satisfaccion Power App",
@@ -22,6 +29,15 @@ FREQ_PATH = OUTPUTS_DIR / "resumen_metricas.csv"
 OPEN_SUMMARY_PATH = OUTPUTS_DIR / "preguntas_abiertas_resumen.csv"
 OPEN_TERMS_PATH = OUTPUTS_DIR / "preguntas_abiertas_terminos.csv"
 USABILITY_PATH = RAW_DIR / "Usabilidad Power APP.xlsx"
+PRETEST_PATH = RAW_DIR / "Experiencia_en_el_uso_de_Power_App_B-Lab.xlsx"
+POSTEST_PATH = RAW_DIR / "Experiencia_en_el_uso_de_Power_App_B-Lab - postest.xlsx"
+PREPOST_EXPORT_PATH = OUTPUTS_DIR / "comparativo_prepost.csv"
+
+METADATA_COLUMNS = ["Id", "Hora de inicio", "Hora de finalización", "Correo electrónico", "Nombre"]
+OPEN_TEXT_COLUMNS = [
+    "Si pudieras cambiar solo una cosa para mejorar la Power App, ¿Cuál sería?",
+    "En tu día a día, ¿Qué te impediría hacer uso de la PowerApp?",
+]
 
 LIKERT_MAP = {
     "totalmente en desacuerdo": 1,
@@ -66,10 +82,377 @@ def load_csv(path: Path) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_raw_responses() -> pd.DataFrame:
+    if PRETEST_PATH.exists():
+        return pd.read_excel(PRETEST_PATH)
+
     excel_files = sorted(RAW_DIR.glob("*.xlsx"))
     if not excel_files:
         return pd.DataFrame()
+
+    # Intenta evitar tomar postest por defecto cuando no hay pretest explicito.
+    for path in excel_files:
+        if "postest" not in normalize_text(path.name):
+            return pd.read_excel(path)
     return pd.read_excel(excel_files[0])
+
+
+@st.cache_data(show_spinner=False)
+def load_prepost_responses() -> tuple[pd.DataFrame, pd.DataFrame]:
+    pre_df = pd.read_excel(PRETEST_PATH) if PRETEST_PATH.exists() else pd.DataFrame()
+    post_df = pd.read_excel(POSTEST_PATH) if POSTEST_PATH.exists() else pd.DataFrame()
+    return pre_df, post_df
+
+
+def normalize_person_key(value: object) -> str:
+    return normalize_text(value)
+
+
+def detect_common_likert_columns(pre_df: pd.DataFrame, post_df: pd.DataFrame) -> list[str]:
+    excluded = set(METADATA_COLUMNS + OPEN_TEXT_COLUMNS)
+    return [c for c in pre_df.columns if c in post_df.columns and c not in excluded]
+
+
+def classify_effect_size_dz(value: float) -> str:
+    if pd.isna(value):
+        return "NA"
+    abs_v = abs(value)
+    if abs_v < 0.2:
+        return "Muy pequeno"
+    if abs_v < 0.5:
+        return "Pequeno"
+    if abs_v < 0.8:
+        return "Mediano"
+    return "Grande"
+
+
+def prepare_prepost_numeric(pre_df: pd.DataFrame, post_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str], int, int]:
+    if pre_df.empty or post_df.empty:
+        return pd.DataFrame(), [], 0, 0
+
+    common_questions = detect_common_likert_columns(pre_df, post_df)
+    if not common_questions:
+        return pd.DataFrame(), [], 0, 0
+
+    pre_work = pre_df.copy()
+    post_work = post_df.copy()
+
+    if "Correo electrónico" not in pre_work.columns:
+        pre_work["Correo electrónico"] = ""
+    if "Correo electrónico" not in post_work.columns:
+        post_work["Correo electrónico"] = ""
+    if "Nombre" not in pre_work.columns:
+        pre_work["Nombre"] = ""
+    if "Nombre" not in post_work.columns:
+        post_work["Nombre"] = ""
+
+    pre_work["person_key"] = pre_work["Correo electrónico"].map(normalize_person_key)
+    post_work["person_key"] = post_work["Correo electrónico"].map(normalize_person_key)
+
+    # Fallback a nombre cuando no hay correo.
+    pre_name_key = pre_work["Nombre"].map(normalize_person_key)
+    post_name_key = post_work["Nombre"].map(normalize_person_key)
+    pre_work.loc[pre_work["person_key"] == "", "person_key"] = pre_name_key
+    post_work.loc[post_work["person_key"] == "", "person_key"] = post_name_key
+
+    pre_work = pre_work[pre_work["person_key"] != ""].copy()
+    post_work = post_work[post_work["person_key"] != ""].copy()
+
+    n_pre_people = int(pre_work["person_key"].nunique())
+    n_post_people = int(post_work["person_key"].nunique())
+
+    pre_num = pre_work[["person_key"] + common_questions].copy()
+    post_num = post_work[["person_key"] + common_questions].copy()
+    for q in common_questions:
+        pre_num[q] = pre_num[q].map(map_likert)
+        post_num[q] = post_num[q].map(map_likert)
+
+    paired = pre_num.merge(post_num, on="person_key", how="inner", suffixes=("_pre", "_post"))
+    return paired, common_questions, n_pre_people, n_post_people
+
+
+def compute_prepost_change(pre_df: pd.DataFrame, post_df: pd.DataFrame) -> tuple[dict[str, float], pd.DataFrame]:
+    paired, questions, n_pre_people, n_post_people = prepare_prepost_numeric(pre_df, post_df)
+    base_summary = {
+        "n_pre": float(n_pre_people),
+        "n_post": float(n_post_people),
+        "n_pares": 0.0,
+        "n_preguntas": float(len(questions)),
+        "indice_pre": float("nan"),
+        "indice_post": float("nan"),
+        "delta_global": float("nan"),
+        "pct_personas_mejoran": float("nan"),
+    }
+
+    if paired.empty or not questions:
+        return base_summary, pd.DataFrame()
+
+    pre_cols = [f"{q}_pre" for q in questions]
+    post_cols = [f"{q}_post" for q in questions]
+
+    pre_vals = paired[pre_cols].to_numpy(dtype=float).ravel()
+    post_vals = paired[post_cols].to_numpy(dtype=float).ravel()
+    pre_vals = pre_vals[~np.isnan(pre_vals)]
+    post_vals = post_vals[~np.isnan(post_vals)]
+
+    person_pre = paired[pre_cols].mean(axis=1, skipna=True)
+    person_post = paired[post_cols].mean(axis=1, skipna=True)
+    person_valid = person_pre.notna() & person_post.notna()
+
+    rows: list[dict[str, float | str]] = []
+    for q in questions:
+        pre_q = paired[f"{q}_pre"]
+        post_q = paired[f"{q}_post"]
+        valid = pre_q.notna() & post_q.notna()
+        if valid.sum() == 0:
+            continue
+
+        pre_v = pre_q[valid]
+        post_v = post_q[valid]
+        delta_v = post_v - pre_v
+        dz = float("nan")
+        if len(delta_v) >= 2 and float(delta_v.std(ddof=1)) > 0:
+            dz = float(delta_v.mean() / delta_v.std(ddof=1))
+
+        p_wilcoxon = float("nan")
+        if wilcoxon is not None and len(delta_v) >= 5 and float(delta_v.abs().sum()) > 0:
+            try:
+                p_wilcoxon = float(wilcoxon(post_v, pre_v, zero_method="wilcox", alternative="two-sided").pvalue)
+            except Exception:
+                p_wilcoxon = float("nan")
+
+        rows.append(
+            {
+                "pregunta": q,
+                "n_pares": float(valid.sum()),
+                "promedio_pre": float(pre_v.mean()),
+                "promedio_post": float(post_v.mean()),
+                "delta_promedio": float(delta_v.mean()),
+                "pct_mejora": float((delta_v > 0).mean() * 100),
+                "pct_sin_cambio": float((delta_v == 0).mean() * 100),
+                "pct_empeora": float((delta_v < 0).mean() * 100),
+                "p_wilcoxon": p_wilcoxon,
+                "effect_size_dz": dz,
+                "effect_size_mag": classify_effect_size_dz(dz),
+            }
+        )
+
+    change_df = pd.DataFrame(rows).sort_values("delta_promedio", ascending=False)
+
+    summary = base_summary.copy()
+    summary["n_pares"] = float(paired.shape[0])
+    summary["indice_pre"] = float(np.mean(pre_vals)) if pre_vals.size else float("nan")
+    summary["indice_post"] = float(np.mean(post_vals)) if post_vals.size else float("nan")
+    if pd.notna(summary["indice_pre"]) and pd.notna(summary["indice_post"]):
+        summary["delta_global"] = float(summary["indice_post"] - summary["indice_pre"])
+    summary["pct_personas_mejoran"] = (
+        float((person_post[person_valid] > person_pre[person_valid]).mean() * 100)
+        if person_valid.any()
+        else float("nan")
+    )
+
+    if not change_df.empty:
+        summary["n_significativas_005"] = float((change_df["p_wilcoxon"] < 0.05).sum())
+    else:
+        summary["n_significativas_005"] = 0.0
+
+    return summary, change_df
+
+
+def export_prepost_change(summary: dict[str, float], change_df: pd.DataFrame) -> Path:
+    export_df = change_df.copy()
+    export_df.insert(0, "indice_global_pre", summary.get("indice_pre", float("nan")))
+    export_df.insert(1, "indice_global_post", summary.get("indice_post", float("nan")))
+    export_df.insert(2, "delta_global", summary.get("delta_global", float("nan")))
+    export_df.insert(3, "n_pares_global", summary.get("n_pares", float("nan")))
+    export_df.insert(4, "n_pre", summary.get("n_pre", float("nan")))
+    export_df.insert(5, "n_post", summary.get("n_post", float("nan")))
+    export_df.insert(6, "pct_personas_mejoran", summary.get("pct_personas_mejoran", float("nan")))
+    PREPOST_EXPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    export_df.to_csv(PREPOST_EXPORT_PATH, index=False, encoding="utf-8-sig")
+    return PREPOST_EXPORT_PATH
+
+
+def render_prepost_change_analysis(pre_df: pd.DataFrame, post_df: pd.DataFrame) -> None:
+    with st.expander("Comparativo de cambio: pretest vs postest", expanded=True):
+        if pre_df.empty or post_df.empty:
+            st.info(
+                "No se encontro pretest o postest en data/raw para comparar. "
+                "Se esperan ambos archivos: 'Experiencia_en_el_uso_de_Power_App_B-Lab.xlsx' y "
+                "'Experiencia_en_el_uso_de_Power_App_B-Lab - postest.xlsx'."
+            )
+            return
+
+        summary, change_df = compute_prepost_change(pre_df, post_df)
+        if change_df.empty:
+            st.warning(
+                "No se pudo construir la comparacion pre/post. Verifica que ambos archivos tengan "
+                "las mismas preguntas Likert y una clave comun (correo o nombre)."
+            )
+            return
+
+        alpha = st.select_slider(
+            "Umbral de significancia (p)",
+            options=[0.1, 0.05, 0.01],
+            value=0.05,
+            key="prepost_alpha",
+        )
+
+        if "p_wilcoxon" in change_df.columns:
+            change_df["significativa"] = np.where(change_df["p_wilcoxon"] < alpha, "Si", "No")
+        else:
+            change_df["significativa"] = "NA"
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Personas pretest", int(summary["n_pre"]))
+        c2.metric("Personas postest", int(summary["n_post"]))
+        c3.metric("Pares emparejados", int(summary["n_pares"]))
+        c4.metric("Indice pre -> post", f"{summary['indice_pre']:.2f} -> {summary['indice_post']:.2f}")
+        c5.metric("Delta global", f"{summary['delta_global']:+.2f}")
+
+        if wilcoxon is None:
+            st.caption("Prueba Wilcoxon no disponible en el entorno. Instala scipy para habilitar significancia estadistica.")
+        else:
+            n_sig = int((change_df["p_wilcoxon"] < alpha).sum())
+            st.caption(f"Preguntas con cambio significativo (p < {alpha}): {n_sig} de {change_df.shape[0]}")
+
+        st.caption(
+            f"Preguntas comparables: {int(summary['n_preguntas'])} | "
+            f"% personas que mejoran su promedio individual: {summary['pct_personas_mejoran']:.1f}%"
+        )
+
+        export_path = export_prepost_change(summary, change_df)
+        st.caption(f"CSV actualizado automaticamente en: {export_path}")
+
+        display_df = change_df.copy()
+        display_df = display_df.sort_values("delta_promedio", ascending=False)
+        display_df["pregunta_label"] = [f"Q{i:02d} - {short_text(q, 84)}" for i, q in enumerate(display_df["pregunta"], start=1)]
+
+        fig_delta = px.bar(
+            display_df.iloc[::-1],
+            x="delta_promedio",
+            y="pregunta_label",
+            orientation="h",
+            color="delta_promedio",
+            color_continuous_scale="RdYlGn",
+            title="Cambio promedio por pregunta (post - pre)",
+            hover_data={
+                "pregunta": True,
+                "n_pares": True,
+                "promedio_pre": ":.2f",
+                "promedio_post": ":.2f",
+                "pct_mejora": ":.1f",
+                "pct_empeora": ":.1f",
+                "p_wilcoxon": ".4f",
+                "effect_size_dz": ".2f",
+                "effect_size_mag": True,
+                "significativa": True,
+                "pregunta_label": False,
+            },
+        )
+        fig_delta.add_vline(x=0, line_dash="dash", line_color="#333333")
+        fig_delta.update_layout(xaxis_title="Delta en escala 1-5", yaxis_title="Pregunta")
+        st.plotly_chart(fig_delta, use_container_width=True)
+
+        st.dataframe(
+            display_df[
+                [
+                    "pregunta",
+                    "n_pares",
+                    "promedio_pre",
+                    "promedio_post",
+                    "delta_promedio",
+                    "pct_mejora",
+                    "pct_sin_cambio",
+                    "pct_empeora",
+                    "p_wilcoxon",
+                    "effect_size_dz",
+                    "effect_size_mag",
+                    "significativa",
+                ]
+            ],
+            use_container_width=True,
+            height=360,
+        )
+
+        st.download_button(
+            "Descargar comparativo pre/post (CSV)",
+            data=change_df.to_csv(index=False).encode("utf-8-sig"),
+            file_name="comparativo_prepost.csv",
+            mime="text/csv",
+        )
+
+
+
+def render_intervention_significance_guide(pre_df: pd.DataFrame, post_df: pd.DataFrame) -> None:
+    st.subheader("Como interpretar si la intervencion fue significativa")
+    if pre_df.empty or post_df.empty:
+        st.info("No hay pretest y postest suficientes para emitir un dictamen.")
+        return
+
+    summary, change_df = compute_prepost_change(pre_df, post_df)
+    paired_df, questions, _, _ = prepare_prepost_numeric(pre_df, post_df)
+    if change_df.empty or paired_df.empty:
+        st.warning("No fue posible calcular comparativo pre/post para emitir conclusion.")
+        return
+
+    pre_cols = [f"{q}_pre" for q in questions]
+    post_cols = [f"{q}_post" for q in questions]
+    person_pre = paired_df[pre_cols].mean(axis=1, skipna=True)
+    person_post = paired_df[post_cols].mean(axis=1, skipna=True)
+    person_valid = person_pre.notna() & person_post.notna()
+
+    if int(person_valid.sum()) < 3:
+        st.warning("No hay suficientes pares comparables para calcular significancia del indice global.")
+        return
+
+    person_pre_v = person_pre[person_valid]
+    person_post_v = person_post[person_valid]
+    delta_global = float(person_post_v.mean() - person_pre_v.mean())
+    n_pares = int(person_valid.sum())
+    n_preguntas = int(len(questions))
+
+    p_global = float("nan")
+    if wilcoxon is not None and float((person_post_v - person_pre_v).abs().sum()) > 0:
+        try:
+            p_global = float(
+                wilcoxon(person_post_v, person_pre_v, zero_method="wilcox", alternative="two-sided").pvalue
+            )
+        except Exception:
+            p_global = float("nan")
+
+    # Criterio pedido: basado en el indice global pre/post de las preguntas Likert comparables.
+    if pd.notna(p_global):
+        es_significativa = (p_global < 0.05) and (delta_global > 0)
+    else:
+        # Fallback si no hay prueba disponible en entorno: direccion y magnitud minima.
+        es_significativa = delta_global >= 0.3
+
+    if es_significativa:
+        st.success("Conclusion: la intervencion fue significativa.")
+    else:
+        st.warning("Conclusion: la intervencion no alcanza significancia con el criterio del indice global pre/post.")
+
+    st.markdown(
+        f"""
+        **Por que:**
+        - Preguntas Likert usadas en el indice global: **{n_preguntas}**.
+        - Pares comparables individuales usados: **{n_pares}**.
+        - Indice global pre: **{person_pre_v.mean():.2f}**.
+        - Indice global post: **{person_post_v.mean():.2f}**.
+        - Delta del indice global (post - pre): **{delta_global:+.2f}**.
+        - p-valor Wilcoxon del indice global pareado: **{p_global:.4f}**.
+
+        **Criterio usado (solo indice global de las preguntas que van):**
+        - Se concluye significativa cuando el indice global mejora (delta > 0)
+          y esa mejora es estadisticamente significativa (p < 0.05).
+        """
+    )
+
+    if n_preguntas != 11:
+        st.info(
+            f"Nota: en este corte se comparan {n_preguntas} preguntas Likert. "
+            "Si esperabas 11 exactas, revisa que ambos archivos tengan las mismas columnas de preguntas."
+        )
 
 
 def validate_files() -> list[Path]:
@@ -490,62 +873,6 @@ def render_app_usage_analysis(usability_events_df: pd.DataFrame, sessions_df: pd
         st.plotly_chart(fig_franja, use_container_width=True)
 
 
-def build_constructos_analysis(ranking_df: pd.DataFrame) -> pd.DataFrame:
-    """Analiza preguntas agrupadas por constructos TAM/UTAUT."""
-    CONSTRUCTOS = {
-        "PEOU (Facilidad de uso percibida)": [
-            "Sé cómo navegar la herramienta.Selecciona",
-            'Entiendo el propósito de cada sección de la app ("¿Qué son las Ciencias del Comportamiento?", "Diseña tu Intervención Comportamental", "Registra el impacto de tu intervención").Selecciona',
-            "Los términos usados en la Power App que son nuevos para mí los entiendo con facilidad.Selecciona",
-        ],
-        "PU (Utilidad percibida)": [
-            'Las herramientas prácticas que te permiten diligenciar campos e interactuar con la app en la sección de "Diseña tu Intervención Comportamental" facilitan diseñar intervenciones..Selecciona',
-            "Siento que la app puede ser mi herramienta principal para realizar una intervención comportamental  .Selecciona",
-            "Considero que la herramienta mejora/facilita la aplicación de Ciencias del Comportamiento.Selecciona",
-        ],
-        "Intención de uso futuro": [
-            "La usaría en futuras iniciativas. .Selecciona",
-            "Considero que esta App puede ser útil incluso para colaboradores que no han tenido espacios con B-Lab..Selecciona",
-        ],
-        "Motivación y apropiación": [
-            "Puedo asociar el contenido teórico de la Power App con los retos que tengo en mi rol   .Selecciona",
-            "Usar esta herramienta me motiva a aplicar Ciencias del Comportamiento en mis proyectos..Selecciona",
-            "Comparto con otras personas conocimientos encontrados en la herramienta .Selecciona",
-        ],
-    }
-
-    results = []
-    for constructo_name, expected_questions in CONSTRUCTOS.items():
-        matching_questions = [q for q in expected_questions if q in ranking_df["pregunta"].values]
-        
-        if not matching_questions:
-            continue
-        
-        subset = ranking_df[ranking_df["pregunta"].isin(matching_questions)]
-        
-        if subset.empty:
-            continue
-        
-        n_items = len(matching_questions)
-        promedio = float(subset["promedio"].mean())
-        favorabilidad = float(subset["favorabilidad_pct"].mean())
-        top_box = float(subset["top_box_pct"].mean())
-        desfavorabilidad = float(subset["desfavorabilidad_pct"].mean())
-        neto = favorabilidad - desfavorabilidad
-        
-        results.append({
-            "constructo": constructo_name,
-            "n_items": n_items,
-            "promedio": round(promedio, 3),
-            "favorabilidad_pct": round(favorabilidad, 1),
-            "top_box_pct": round(top_box, 1),
-            "desfavorabilidad_pct": round(desfavorabilidad, 1),
-            "neto_favorabilidad_pct": round(neto, 1),
-        })
-    
-    return pd.DataFrame(results).sort_values("promedio", ascending=True).reset_index(drop=True)
-
-
 def main() -> None:
     st.title("Tablero de Analisis - Encuesta Likert Power App")
     st.caption("Visualizacion consolidada de satisfaccion y preguntas abiertas")
@@ -560,8 +887,12 @@ def main() -> None:
     open_summary_df = load_csv(OPEN_SUMMARY_PATH)
     open_terms_df = load_csv(OPEN_TERMS_PATH)
     raw_df = load_raw_responses()
+    pretest_df, postest_df = load_prepost_responses()
     usability_raw_df = load_usability_logs()
     usability_events_df, sessions_df = prepare_usability_data(usability_raw_df)
+
+    render_intervention_significance_guide(pretest_df, postest_df)
+    st.divider()
 
     if ranking_df.empty:
         st.warning("El archivo de ranking esta vacio.")
@@ -588,6 +919,8 @@ def main() -> None:
 
     st.divider()
 
+    render_prepost_change_analysis(pretest_df, postest_df)
+
     with st.expander("Mejor y peor pregunta", expanded=True):
         col_a, col_b = st.columns(2)
         col_a.subheader("Peor calificada")
@@ -601,68 +934,6 @@ def main() -> None:
         col_b.write(
             f"Promedio: {best_row['promedio']:.2f} | Top-box: {best_row['top_box_pct']:.1f}% | Neto: {best_row['neto_favorabilidad_pct']:.1f}%"
         )
-
-    with st.expander("Análisis por Constructos TAM/UTAUT", expanded=True):
-        st.markdown("""
-        El instrumento se fundamenta en el Modelo de Aceptación Tecnológica (TAM) y la Teoría Unificada 
-        de Aceptación y Uso de la Tecnología (UTAUT). Las preguntas miden cuatro constructos clave:
-        
-        - **PEOU (Facilidad de uso percibida)**: navegación, claridad y comprensión
-        - **PU (Utilidad percibida)**: facilidad de diseño y mejora en aplicación
-        - **Intención de uso futuro**: recomendación y uso en iniciativas posteriores
-        - **Motivación y apropiación**: asociación teórica, motivación y difusión del conocimiento
-        """)
-        
-        constructos_df = build_constructos_analysis(ranking_df)
-        if not constructos_df.empty:
-            col_const1, col_const2 = st.columns(2)
-            
-            # Autoescalar rangos de colores según los datos
-            prom_min = float(constructos_df["promedio"].min())
-            prom_max = float(constructos_df["promedio"].max())
-            neto_min = float(constructos_df["neto_favorabilidad_pct"].min())
-            neto_max = float(constructos_df["neto_favorabilidad_pct"].max())
-            
-            with col_const1:
-                st.subheader("Promedio por Constructo")
-                fig_const_prom = px.bar(
-                    constructos_df.sort_values("promedio"),
-                    y="constructo",
-                    x="promedio",
-                    orientation="h",
-                    color="promedio",
-                    color_continuous_scale="RdYlGn",
-                    range_color=(prom_min, prom_max),
-                    title="Promedio (1-5)",
-                    hover_data={"promedio": ":.3f"},
-                )
-                fig_const_prom.update_layout(height=350, showlegend=False)
-                st.plotly_chart(fig_const_prom, use_container_width=True)
-            
-            with col_const2:
-                st.subheader("Neto de Favorabilidad")
-                fig_const_neto = px.bar(
-                    constructos_df.sort_values("neto_favorabilidad_pct"),
-                    y="constructo",
-                    x="neto_favorabilidad_pct",
-                    orientation="h",
-                    color="neto_favorabilidad_pct",
-                    color_continuous_scale="RdYlGn",
-                    range_color=(neto_min, neto_max),
-                    title="Neto Favorabilidad (%)",
-                    hover_data={"neto_favorabilidad_pct": ":.1f"},
-                )
-                fig_const_neto.update_layout(height=350, showlegend=False)
-                st.plotly_chart(fig_const_neto, use_container_width=True)
-            
-            st.dataframe(
-                constructos_df[[
-                    "constructo", "n_items", "promedio", "favorabilidad_pct", 
-                    "top_box_pct", "neto_favorabilidad_pct"
-                ]],
-                use_container_width=True,
-                hide_index=True,
-            )
 
     chart_df = ranking_df.copy()
     question_label_map = build_question_label_map(chart_df)
