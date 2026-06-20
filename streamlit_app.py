@@ -1186,5 +1186,6 @@ def main() -> None:
     render_app_usage_analysis(usability_events_df, sessions_df)
 
 
+
 if __name__ == "__main__":
     main()
