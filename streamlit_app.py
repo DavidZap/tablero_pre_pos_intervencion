@@ -11,10 +11,8 @@ import streamlit as st
 
 try:
     from scipy.stats import wilcoxon
-    print(f"DEBUG: wilcoxon imported successfully: {wilcoxon}")
-except Exception as e:
+except Exception:
     wilcoxon = None
-    print(f"DEBUG: wilcoxon import FAILED: {e}")
 
 st.set_page_config(
     page_title="Tablero Satisfaccion Power App",
@@ -215,17 +213,8 @@ def compute_prepost_change(pre_df: pd.DataFrame, post_df: pd.DataFrame) -> tuple
             try:
                 res = wilcoxon(post_v.values, pre_v.values, zero_method="wilcox", alternative="two-sided")
                 p_wilcoxon = float(res.pvalue)
-                print(f"DEBUG: Item '{q}' wilcoxon p={p_wilcoxon}")
-            except Exception as e:
-                print(f"DEBUG: Item '{q}' wilcoxon FAILED: {e}")
+            except Exception:
                 p_wilcoxon = float("nan")
-        else:
-            if wilcoxon is None:
-                print(f"DEBUG: Item '{q}' - wilcoxon is None")
-            if len(delta_v) < 5:
-                print(f"DEBUG: Item '{q}' - insufficient samples: {len(delta_v)}")
-            if float(delta_v.abs().sum()) == 0:
-                print(f"DEBUG: Item '{q}' - zero deltas")
 
         rows.append(
             {
@@ -428,15 +417,8 @@ def render_intervention_significance_guide(pre_df: pd.DataFrame, post_df: pd.Dat
                 alternative="two-sided"
             )
             p_global = float(res.pvalue)
-            print(f"DEBUG: Global wilcoxon p={p_global}")
-        except Exception as e:
-            print(f"DEBUG: Global wilcoxon FAILED: {e}")
+        except Exception:
             p_global = float("nan")
-    else:
-        if wilcoxon is None:
-            print(f"DEBUG: Global - wilcoxon is None")
-        if float((person_post_v - person_pre_v).abs().sum()) == 0:
-            print(f"DEBUG: Global - zero deltas")
 
     # Criterio pedido: basado en el indice global pre/post de las preguntas Likert comparables.
     if pd.notna(p_global):
