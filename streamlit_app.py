@@ -410,7 +410,12 @@ def render_intervention_significance_guide(pre_df: pd.DataFrame, post_df: pd.Dat
     if wilcoxon is not None and float((person_post_v - person_pre_v).abs().sum()) > 0:
         try:
             p_global = float(
-                wilcoxon(person_post_v, person_pre_v, zero_method="wilcox", alternative="two-sided").pvalue
+                wilcoxon(
+                    person_post_v.values,
+                    person_pre_v.values,
+                    zero_method="wilcox",
+                    alternative="two-sided"
+                ).pvalue
             )
         except Exception:
             p_global = float("nan")
