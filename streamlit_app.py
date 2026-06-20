@@ -211,7 +211,7 @@ def compute_prepost_change(pre_df: pd.DataFrame, post_df: pd.DataFrame) -> tuple
         p_wilcoxon = float("nan")
         if wilcoxon is not None and len(delta_v) >= 5 and float(delta_v.abs().sum()) > 0:
             try:
-                p_wilcoxon = float(wilcoxon(post_v, pre_v, zero_method="wilcox", alternative="two-sided").pvalue)
+                p_wilcoxon = float(wilcoxon(post_v.values, pre_v.values, zero_method="wilcox", alternative="two-sided").pvalue)
             except Exception:
                 p_wilcoxon = float("nan")
 
